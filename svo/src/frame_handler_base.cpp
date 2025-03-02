@@ -48,6 +48,7 @@
 
 namespace
 {
+// 计算地图中前两个关键帧之间的距离
 inline double distanceFirstTwoKeyframes(svo::Map& map)
 {
   svo::FramePtr first_kf = map.getKeyFrameAt(0);
@@ -63,6 +64,7 @@ namespace svo
 {
 
 // definition of global and static variables which were declared in the header
+// 定义了一些全局变量和枚举类型的字符串映射，用于跟踪系统状态、跟踪质量和更新结果
 PerformanceMonitorPtr g_permon;
 
 const std::unordered_map<svo::Stage, std::string, EnumClassHash> kStageName
