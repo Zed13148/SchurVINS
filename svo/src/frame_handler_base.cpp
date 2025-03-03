@@ -12,43 +12,57 @@
 
 
 #include "svo/frame_handler_base.h"
+// 以下的头文件和模块提供了实现 FrameHandlerBase 类所需的各种功能
 
-#include <functional>
-#include <future>
-#include <memory>
-#include <opencv2/imgproc/imgproc.hpp>
+// c++ 标准库头文件
+#include <functional>   // 提供了函数对象、绑定器和其他与函数相关的工具。
+#include <future>       // 支持异步操作和并行任务的库。
+#include <memory>       // 提供智能指针和其他内存管理工具。
 
-#include <svo/common/conversions.h>
-#include <svo/common/point.h>
-#include <svo/common/local_feature.h>
-#include <svo/common/imu_calibration.h>
-#include <svo/direct/depth_filter.h>
-#include <svo/direct/feature_detection.h>
-#include <svo/direct/feature_detection_utils.h>
-#include <svo/direct/matcher.h>
-#include <svo/tracker/feature_tracker.h>
+// opencv 头文件
+#include <opencv2/imgproc/imgproc.hpp>  // OpenCV中的一个模块，用于图像处理操作，如滤波、变换和其他图像处理功能。
 
+// SVO 框架相关的头文件
+#include <svo/common/conversions.h>               // 包含一些常见的转换函数。
+#include <svo/common/point.h>                     // 包含点的定义和相关操作。
+#include <svo/common/local_feature.h>             // 包含本地特征的定义和操作。
+#include <svo/common/imu_calibration.h>           // 包含IMU（惯性测量单元）校准的相关功能
+#include <svo/direct/depth_filter.h>              // 包含深度滤波器的定义和实现
+#include <svo/direct/feature_detection.h>         // 包含特征检测器的定义和实现。
+#include <svo/direct/feature_detection_utils.h>   // 包含特征检测的辅助函数
+#include <svo/direct/matcher.h>                   // 包含特征匹配器的定义和实现
+#include <svo/tracker/feature_tracker.h>          // 包含特征跟踪器的定义和实现
+
+// 条件编译：循环闭合模块（可选择性开启）
 #ifdef SVO_LOOP_CLOSING
 #include <svo/online_loopclosing/loop_closing.h>
 #endif
 
+// 条件编译：全局地图模块（可选择性开启）
 #ifdef SVO_GLOBAL_MAP
 #include <svo/global_map.h>
 #endif
 
-# include <svo/img_align/sparse_img_align.h>
+// 图像对齐模块
+# include <svo/img_align/sparse_img_align.h>  // 包含稀疏图像对齐的定义和实现
 
-#include "svo/abstract_bundle_adjustment.h"
-#include "svo/initialization.h"
-#include "svo/map.h"
-#include "svo/reprojector.h"
-#include "svo/imu_handler.h"
-#include "svo/pose_optimizer.h"
-#include "svo/schur_vins.h"
+// SVO 框架的其他头文件
+#include "svo/abstract_bundle_adjustment.h"   // 包含抽象捆绑调整器的定义
+#include "svo/initialization.h"               // 包含初始化相关的定义和实现
+#include "svo/map.h"                          // 包含地图管理的定义和实现
+#include "svo/reprojector.h"                  // 包含重投影器的定义和实现
+#include "svo/imu_handler.h"                  // 包含IMU处理器的定义和实现
+#include "svo/pose_optimizer.h"               // 包含位姿优化器的定义和实现
+#include "svo/schur_vins.h"                   // 包含SchurVINS的定义和实现
 
 namespace
 {
 // 计算地图中前两个关键帧之间的距离
+// 为什么只计算前两个？ 
+// 1.初始化尺度：在视觉里程计中，特别是单目视觉里程计，尺度是无法从单个图像中直接获取的。通过计算前两个关键帧之间的距离，可以在初始化阶段确定地图的尺度。
+// 2.检查地图稳定性：在捆绑调整（Bundle Adjustment）和其他优化过程中，前两个关键帧之间的距离变化可以作为检查地图是否稳定的一个指标。
+// 如果距离变化很大，可能表明优化过程中出现了问题，需要重新初始化或调整参数。
+// 3.后端处理：在后端处理（如全局捆绑调整或闭环检测）过程中，前两个关键帧的距离可以用于验证和调整优化结果。
 inline double distanceFirstTwoKeyframes(svo::Map& map)
 {
   svo::FramePtr first_kf = map.getKeyFrameAt(0);
@@ -60,27 +74,34 @@ inline double distanceFirstTwoKeyframes(svo::Map& map)
 }
 }
 
-namespace svo
+namespace svo          // 剩下的代码全部放在了命名空间 svo 中，目的是为了有效地组织代码、避免命名冲突、提高代码可读性，并为大型项目提供良好的结构和上下文信息。
 {
 
 // definition of global and static variables which were declared in the header
-// 定义了一些全局变量和枚举类型的字符串映射，用于跟踪系统状态、跟踪质量和更新结果
-PerformanceMonitorPtr g_permon;
+PerformanceMonitorPtr g_permon;    
+// PerformanceMonitorPtr 是一个智能指针类型，用于管理 PerformanceMonitor 对象的生命周期。
+// g_permon是一个全局的性能监视器指针。性能监视器用于记录和跟踪系统性能指标，如处理时间、特征数量等。
 
 const std::unordered_map<svo::Stage, std::string, EnumClassHash> kStageName
 {{Stage::kPaused, "Paused"}, {Stage::kInitializing, "Initializing"},
   {Stage::kTracking, "Tracking"}, {Stage::kRelocalization, "Reloc"}};
+// kStageName：这是一个将 svo::Stage 枚举类型映射到字符串的哈希表。
+// svo::Stage 枚举类型表示系统的不同阶段，包括暂停、初始化、跟踪和重定位。这个映射表将这些阶段转换为对应的字符串，以便在日志、调试和用户界面中使用。
 
 const std::unordered_map<svo::TrackingQuality, std::string, EnumClassHash>
 kTrackingQualityName
 {{TrackingQuality::kInsufficient, "Insufficient"},
   {TrackingQuality::kBad, "Bad"}, {TrackingQuality::kGood, "Good"}
 };
+// kTrackingQualityName：这是一个将 svo::TrackingQuality 枚举类型映射到字符串的哈希表。
+// svo::TrackingQuality 枚举类型表示跟踪的质量，包括不足、糟糕和良好。这个映射表将这些质量级别转换为对应的字符串，以便在日志、调试和用户界面中使用。
 
 const std::unordered_map<svo::UpdateResult, std::string, EnumClassHash>
 kUpdateResultName
 {{UpdateResult::kDefault, "Default"}, {UpdateResult::kKeyframe, "KF"},
   {UpdateResult::kFailure, "Failure"}};
+// kUpdateResultName：这是一个将 svo::UpdateResult 枚举类型映射到字符串的哈希表。
+// svo::UpdateResult 枚举类型表示更新的结果，包括默认、关键帧和失败。这个映射表将这些结果转换为对应的字符串，以便在日志、调试和用户界面中使用。
 
 FrameHandlerBase::FrameHandlerBase(const BaseOptions& base_options, const ReprojectorOptions& reprojector_options,
                                    const DepthFilterOptions& depthfilter_options,
