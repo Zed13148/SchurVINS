@@ -103,6 +103,7 @@ kUpdateResultName
 // kUpdateResultName：这是一个将 svo::UpdateResult 枚举类型映射到字符串的哈希表。
 // svo::UpdateResult 枚举类型表示更新的结果，包括默认、关键帧和失败。这个映射表将这些结果转换为对应的字符串，以便在日志、调试和用户界面中使用。
 
+// 主要包括 FrameHandlerBase 类的构造函数和析构函数。构造函数用于初始化对象的状态和成员变量，析构函数用于清理资源。
 FrameHandlerBase::FrameHandlerBase(const BaseOptions& base_options, const ReprojectorOptions& reprojector_options,
                                    const DepthFilterOptions& depthfilter_options,
                                    const DetectorOptions& detector_options, const InitializationOptions& init_options,
@@ -112,13 +113,13 @@ FrameHandlerBase::FrameHandlerBase(const BaseOptions& base_options, const Reproj
         0)
 {
   // sanity checks
-  CHECK_EQ(reprojector_options.cell_size, detector_options.cell_size);
+  CHECK_EQ(reprojector_options.cell_size, detector_options.cell_size);  // 一致性检查，检查括号内的两个参数是否相等
 
-  need_new_kf_ = std::bind(&FrameHandlerBase::needNewKf, this, std::placeholders::_1);
+  need_new_kf_ = std::bind(&FrameHandlerBase::needNewKf, this, std::placeholders::_1);  // 将成员函数 needNewKf 绑定到 need_new_kf_，方便调用
 
-  if (options_.trace_statistics)
+  if (options_.trace_statistics)  // 如果启用了统计跟踪，初始化性能监视器，并添加各种计时器和日志记录项。
   {
-    // Initialize Performance Monitor
+    // Initialize Performance Monitor 
     g_permon.reset(new vk::PerformanceMonitor());
     g_permon->addTimer("pyramid_creation");
     g_permon->addTimer("sparse_img_align");
@@ -149,13 +150,14 @@ FrameHandlerBase::FrameHandlerBase(const BaseOptions& base_options, const Reproj
     g_permon->addLog("point_optimizer_num");
     g_permon->init("trace_frontend", options_.trace_dir);
   }
+  
   // init modules
-  reprojectors_.reserve(cams_->getNumCameras());
+  reprojectors_.reserve(cams_->getNumCameras());   // 初始化重投影器：为每个相机初始化一个重投影器，并存储在 reprojectors_ 向量中。
   for (size_t camera_idx = 0; camera_idx < cams_->getNumCameras(); ++camera_idx)
   {
     reprojectors_.emplace_back(new Reprojector(reprojector_options, camera_idx));
   }
-  SparseImgAlignOptions img_align_options;
+  SparseImgAlignOptions img_align_options;     // 初始化稀疏图像对齐和位姿优化器：配置稀疏图像对齐选项并初始化 SparseImgAlign 和 PoseOptimizer 对象。
   img_align_options.max_level = options_.img_align_max_level;
   img_align_options.min_level = options_.img_align_min_level;
   img_align_options.robustification = options_.img_align_robustification;
@@ -168,6 +170,7 @@ FrameHandlerBase::FrameHandlerBase(const BaseOptions& base_options, const Reproj
   if (options_.poseoptim_using_unit_sphere)
     pose_optimizer_->setErrorType(PoseOptimizer::ErrorType::kBearingVectorDiff);
 
+  // 初始化 SchurVINS
   bool user_schur_vins = true;
   if (user_schur_vins) {
     const int WINDOW_SIZE = options_.window_size_;
