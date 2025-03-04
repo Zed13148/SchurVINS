@@ -196,7 +196,8 @@ FrameHandlerBase::FrameHandlerBase(const BaseOptions& base_options, const Reproj
 
   // DEBUG ***
   //pose_optimizer_->initTracing(options_.trace_dir);
-  DetectorOptions detector_options2 = detector_options;
+  DetectorOptions detector_options2 = detector_options;    
+  // 将传入的 detector_options 复制到本地变量 detector_options2，可以在不影响原始配置的情况下，对本地检测器选项进行修改和使用。
   //detector_options2.detector_type = DetectorType::kGridGrad;
 
   depth_filter_.reset(new DepthFilter(depthfilter_options, detector_options2, cams_));       // 初始化深度滤波器对象。
@@ -213,11 +214,14 @@ FrameHandlerBase::~FrameHandlerBase()
 }
 
 //------------------------------------------------------------------------------
+// 这部分代码实现了 FrameHandlerBase 类的 addImageBundle 方法，用于处理传入的一组图像。
+// 具体来说，该方法将图像转换为帧对象，并将其打包成帧束（FrameBundle），然后交给 addFrameBundle 方法进一步处理。
 bool FrameHandlerBase::addImageBundle(const std::vector<cv::Mat>& imgs, const uint64_t timestamp)
 {
   if (last_frames_)
   {
     // check if the timestamp is valid
+    // 如果存在上一个帧束（last_frames_），则检查当前图像的时间戳是否早于上一个帧束的时间戳。如果是，则丢弃当前图像束并返回 false。
     if (last_frames_->getMinTimestampNanoseconds() >= static_cast<int64_t>(timestamp))
     {
       VLOG(4) << "Dropping frame: timestamp older than last frame of id " << last_frames_->getBundleId();
@@ -231,12 +235,12 @@ bool FrameHandlerBase::addImageBundle(const std::vector<cv::Mat>& imgs, const ui
     // if (options_.trace_statistics)
     //   bundle_adjustment_->setPerformanceMonitor(options_.trace_dir);
   }
-  if (options_.trace_statistics)
+  if (options_.trace_statistics)    // 如果启用了统计跟踪，则启动一个计时器，用于记录图像金字塔创建的时间。
   {
     SVO_START_TIMER("pyramid_creation");
   }
-  CHECK_EQ(imgs.size(), cams_->getNumCameras());
-  std::vector<FramePtr> frames;
+  CHECK_EQ(imgs.size(), cams_->getNumCameras());    // 检查图像数量：确保传入的图像数量与相机数量一致。
+  std::vector<FramePtr> frames;     // 创建帧对象：将每个图像转换为 Frame 对象，并设置其相应的相机-IMU变换和帧索引。
   for (size_t i = 0; i < imgs.size(); ++i)
   {
     frames.push_back(
@@ -245,8 +249,8 @@ bool FrameHandlerBase::addImageBundle(const std::vector<cv::Mat>& imgs, const ui
     frames.back()->set_T_cam_imu(cams_->get_T_C_B(i));
     frames.back()->setNFrameIndex(i);
   }
-  FrameBundlePtr frame_bundle(new FrameBundle(frames));
-  if (options_.trace_statistics)
+  FrameBundlePtr frame_bundle(new FrameBundle(frames));    // 创建帧束：将帧对象打包成一个帧束（FrameBundle）。
+  if (options_.trace_statistics)   // 如果启用了统计跟踪，则停止计时器，并记录图像金字塔创建的时间.
   {
     SVO_STOP_TIMER("pyramid_creation");
   }
@@ -261,7 +265,7 @@ bool FrameHandlerBase::addFrameBundle(const FrameBundlePtr& frame_bundle)
   CHECK_EQ(frame_bundle->size(), cams_->numCameras());
 
   // ---------------------------------------------------------------------------
-  // Prepare processing.
+  // Prepare processing.  准备处理新的帧束
 
   if (set_start_)
   {
@@ -292,11 +296,12 @@ bool FrameHandlerBase::addFrameBundle(const FrameBundlePtr& frame_bundle)
   timer_.start();
 
   // ---------------------------------------------------------------------------
-  // Add to pipeline.
+  // Add to pipeline.  
+  // 将新的帧束添加到处理管道，并更新帧计数器。
   new_frames_ = frame_bundle;
   ++frame_counter_;
 
-#ifdef SVO_GLOBAL_MAP
+#ifdef SVO_GLOBAL_MAP    // 如果启用了全局地图，处理IMU测量数据并将其累积到全局地图中。
   if (global_map_ && imu_handler_ && last_frames_)
   {
     ImuMeasurements imu_meas_since_last;
@@ -318,6 +323,7 @@ bool FrameHandlerBase::addFrameBundle(const FrameBundlePtr& frame_bundle)
   // if we have bundle adjustment running in parallel thread, check if it has
   // computed a new map. in this case, we replace our map with the latest estimate
   // for the CeresBackend this value should always be obtainable
+  // 如果存在捆绑调整对象，计算并记录前两个关键帧之间的距离，用于后续的尺度检查。
   if (bundle_adjustment_)
   {
     //compute the distance between the last two keyframes before ba update
@@ -325,8 +331,10 @@ bool FrameHandlerBase::addFrameBundle(const FrameBundlePtr& frame_bundle)
     {
       svo_dist_first_two_kfs = distanceFirstTwoKeyframes(*map_);
     }
+    
 
     //--- Actual Update
+    // 确保系统在处理新的帧束时能够正确地加载和应用最新的地图和运动先验，从而提供更准确的位姿估计和导航结果。
     // if we are reinitializing, restore the previous states
     VLOG(40) << "Load map and motion prior from backend.";
     if (backend_reinit_)
@@ -369,6 +377,7 @@ bool FrameHandlerBase::addFrameBundle(const FrameBundlePtr& frame_bundle)
   }
 
     // fill in frame bundle imu measurements
+    // 确保帧束在处理时包含必要的IMU测量数据
 #ifdef USE_SCHUR_VINS
   if (schur_vins_ && imu_handler_) {
     ImuMeasurements imu_measurements;
@@ -389,18 +398,18 @@ bool FrameHandlerBase::addFrameBundle(const FrameBundlePtr& frame_bundle)
   }
 #endif
 
-  // handle motion prior
+  // handle motion prior 运动先验
   if (have_motion_prior_)
   {
-    have_rotation_prior_ = true;
+    have_rotation_prior_ = true;    // 设置旋转先验标志并获取新帧束的旋转先验。
     R_imu_world_ = new_frames_->get_T_W_B().inverse().getRotation();
-    if (last_frames_)
+    if (last_frames_)     // 如果存在上一个帧束，计算新旧IMU之间的变换矩阵，并设置运动先验标志。
     {
       T_newimu_lastimu_prior_ = new_frames_->get_T_W_B().inverse() * last_frames_->get_T_W_B();
       have_motion_prior_ = true;
     }
 
-    //--- For scale initialization
+    //--- For scale initialization  进行尺度初始化，检查后端尺度是否稳定，并根据情况更新种子深度值。
     if (!backend_scale_initialized_)
     {
       if (backend_scale_stable)
@@ -420,7 +429,7 @@ bool FrameHandlerBase::addFrameBundle(const FrameBundlePtr& frame_bundle)
       }
     }
   }
-  else
+  else  // 如果没有运动先验，预测新帧的位姿并设置初始位姿估计。
   {
     // Predict pose of new frame using motion prior.
     // TODO(cfo): remove same from processFrame in mono.
@@ -444,7 +453,7 @@ bool FrameHandlerBase::addFrameBundle(const FrameBundlePtr& frame_bundle)
   // We start the backend first, since it is the most time crirical
   if (bundle_adjustment_)
   {
-#ifdef SVO_LOOP_CLOSING
+#ifdef SVO_LOOP_CLOSING   // 如果启用了回环检测模块，检查并应用回环纠正信息。
     // if we have loop closing module, see whether there is any correction we can do
     if (lc_)
     {
@@ -459,7 +468,7 @@ bool FrameHandlerBase::addFrameBundle(const FrameBundlePtr& frame_bundle)
     }
 #endif
     VLOG(40) << "Call bundle adjustment.";
-    bundle_adjustment_->bundleAdjustment(new_frames_);
+    bundle_adjustment_->bundleAdjustment(new_frames_);    调用捆绑调整方法对新帧束进行捆绑调整。
   }
 
   // Information exchange between loop closing and global map
@@ -539,6 +548,7 @@ bool FrameHandlerBase::addFrameBundle(const FrameBundlePtr& frame_bundle)
 #endif
   // ---------------------------------------------------------------------------
   // Finish pipeline.
+  // 通过下面这些步骤，系统能够在处理新的帧束时，及时更新统计信息、尝试重定位并进行必要的复位操作，从而提高系统的鲁棒性和准确性。
 
   if (last_frames_)
   {
