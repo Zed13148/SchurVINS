@@ -170,7 +170,7 @@ FrameHandlerBase::FrameHandlerBase(const BaseOptions& base_options, const Reproj
   if (options_.poseoptim_using_unit_sphere)
     pose_optimizer_->setErrorType(PoseOptimizer::ErrorType::kBearingVectorDiff);
 
-  // 初始化 SchurVINS
+  // 初始化 SchurVINS，配置 SchurVINS 的窗口大小、观测误差、焦距、外参和协方差等参数，并进行初始化。
   bool user_schur_vins = true;
   if (user_schur_vins) {
     const int WINDOW_SIZE = options_.window_size_;
@@ -199,13 +199,14 @@ FrameHandlerBase::FrameHandlerBase(const BaseOptions& base_options, const Reproj
   DetectorOptions detector_options2 = detector_options;
   //detector_options2.detector_type = DetectorType::kGridGrad;
 
-  depth_filter_.reset(new DepthFilter(depthfilter_options, detector_options2, cams_));
-  initializer_ = initialization_utils::makeInitializer(init_options, tracker_options, detector_options, cams_);
-  overlap_kfs_.resize(cams_->getNumCameras());
+  depth_filter_.reset(new DepthFilter(depthfilter_options, detector_options2, cams_));       // 初始化深度滤波器对象。
+  initializer_ = initialization_utils::makeInitializer(init_options, tracker_options, detector_options, cams_);      // 利用配置选项创建初始化器对象
+  overlap_kfs_.resize(cams_->getNumCameras());       // 根据相机数量调整 overlap_kfs_ 容器的大小
 
   VLOG(1) << "SVO initialized";
 }
 
+// 析构函数
 FrameHandlerBase::~FrameHandlerBase()
 {
   VLOG(1) << "SVO destructor invoked";
