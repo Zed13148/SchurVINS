@@ -647,6 +647,8 @@ bool FrameHandlerBase::addFrameBundle(const FrameBundlePtr& frame_bundle)
 }
 
 //------------------------------------------------------------------------------
+// 初始化和更新IMU的旋转状态
+// 设置旋转先验
 void FrameHandlerBase::setRotationPrior(const Quaternion& R_imu_world)
 {
   VLOG(40) << "Set rotation prior.";
@@ -654,6 +656,7 @@ void FrameHandlerBase::setRotationPrior(const Quaternion& R_imu_world)
   have_rotation_prior_ = true;
 }
 
+// 设置旋转增量先验
 void FrameHandlerBase::setRotationIncrementPrior(const Quaternion& R_lastimu_newimu)
 {
   VLOG(40) << "Set rotation increment prior.";
@@ -662,9 +665,10 @@ void FrameHandlerBase::setRotationIncrementPrior(const Quaternion& R_lastimu_new
 }
 
 //------------------------------------------------------------------------------
+// 设置帧束（FrameBundle）的初始位姿
 void FrameHandlerBase::setInitialPose(const FrameBundlePtr& frame_bundle) const
 {
-  if (have_rotation_prior_)
+  if (have_rotation_prior_)          // 如果存在旋转先验，遍历帧束中的每个帧，计算并设置其初始位姿 T_f_w_
   {
     VLOG(40) << "Set initial pose: With rotation prior";
     for (size_t i = 0; i < frame_bundle->size(); ++i)
@@ -672,7 +676,7 @@ void FrameHandlerBase::setInitialPose(const FrameBundlePtr& frame_bundle) const
       frame_bundle->at(i)->T_f_w_ = cams_->get_T_C_B(i) * Transformation(R_imu_world_, Vector3d::Zero());
     }
   }
-  else if (frame_bundle->imu_measurements_.cols() > 0)
+  else if (frame_bundle->imu_measurements_.cols() > 0)      // 使用IMU测量数据设置初始位姿
   {
     VLOG(40) << "Set initial pose: Use inertial measurements in frame to get gravity.";
     const Vector3d g = frame_bundle->imu_measurements_.topRows<3>().rowwise().sum();
@@ -693,7 +697,7 @@ void FrameHandlerBase::setInitialPose(const FrameBundlePtr& frame_bundle) const
     frame_bundle->set_T_W_B(T_imu_world.inverse());
     VLOG(3) << "Initial Rotation = " << std::endl << C_imu_world.transpose() << std::endl;
   }
-  else
+  else                //  如果既没有旋转先验也没有IMU测量数据，遍历帧束中的每个帧，计算并设置其初始位姿 T_f_w_，使得IMU与世界坐标系对齐。
   {
     VLOG(40) << "Set initial pose: set such that T_imu_world is identity.";
     for (size_t i = 0; i < frame_bundle->size(); ++i)
@@ -716,6 +720,7 @@ size_t FrameHandlerBase::sparseImageAlignment()
   // optimize the pose of the new frame such that it matches the pose of the previous frame best
   // this will improve the relative transformation between the previous and the new frame
   // the result is the number of feature points which could be tracked
+  // 该方法用于稀疏图像对齐，优化新帧的位姿以使其与前一帧的位姿尽可能匹配，从而改进前后帧之间的相对变换。最终结果是能够被跟踪的特征点数量。
   // this is a hierarchical KLT solver
   VLOG(40) << "Sparse image alignment.";
   if (options_.trace_statistics)
