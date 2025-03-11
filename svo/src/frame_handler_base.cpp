@@ -765,6 +765,7 @@ size_t FrameHandlerBase::sparseImageAlignment()
 }
 
 //------------------------------------------------------------------------------
+// 将地图中的点投影到当前帧中，并统计重投影的特征点数目。
 size_t FrameHandlerBase::projectMapInFrame()
 {
   VLOG(40) << "Project map in frame.";
@@ -893,6 +894,7 @@ size_t FrameHandlerBase::optimizePose()
   // optimize the pose of the frame in such a way, that the projection of all feature world coordinates
   // is not far off the position of the feature points within the frame. The optimization is done for all points
   // in the same time, hence optimizing frame pose.
+  // 优化当前帧的位姿，使得所有特征点在世界坐标系中的投影与其在图像帧中的位置尽可能一致。
   if (options_.trace_statistics)
   {
     SVO_START_TIMER("pose_optimizer");
@@ -923,6 +925,7 @@ size_t FrameHandlerBase::optimizePose()
 }
 
 //------------------------------------------------------------------------------
+// 优化给定帧中的特征点，使得它们在所有关键帧中的投影误差最小化。
 void FrameHandlerBase::optimizeStructure(const FrameBundle::Ptr& frames, int max_n_pts, int max_iter)
 {
   VLOG(40) << "Optimize structure.";
@@ -980,6 +983,7 @@ void FrameHandlerBase::optimizeStructure(const FrameBundle::Ptr& frames, int max
 }
 
 //------------------------------------------------------------------------------
+// 将当前帧中的种子点（seeds）升级为特征点（features）
 void FrameHandlerBase::upgradeSeedsToFeatures(const FramePtr& frame)
 {
   VLOG(40) << "Upgrade seeds to features";
@@ -1073,6 +1077,7 @@ void FrameHandlerBase::upgradeSeedsToFeatures(const FramePtr& frame)
 }
 
 //------------------------------------------------------------------------------
+// 重置视觉前端的所有状态和变量
 void FrameHandlerBase::resetVisionFrontendCommon()
 {
   stage_ = Stage::kPaused;
@@ -1143,6 +1148,7 @@ void FrameHandlerBase::setRecovery(const bool recovery)
 }
 
 //------------------------------------------------------------------------------
+// 根据观测的特征点数量和特征点数量的变化量来设置当前帧的追踪质量。
 void FrameHandlerBase::setTrackingQuality(const size_t num_observations)
 {
   tracking_quality_ = TrackingQuality::kGood;
@@ -1164,6 +1170,7 @@ void FrameHandlerBase::setTrackingQuality(const size_t num_observations)
 }
 
 //------------------------------------------------------------------------------
+// 判断是否需要插入新的关键帧
 bool FrameHandlerBase::needNewKf(const Transformation&)
 {
   const std::vector<FramePtr>& visible_kfs = overlap_kfs_.at(0);
@@ -1276,6 +1283,7 @@ bool FrameHandlerBase::needNewKf(const Transformation&)
   return true;
 }
 
+// 获取运动先验
 void FrameHandlerBase::getMotionPrior(const bool /*use_velocity_in_frame*/)
 {
   if (have_rotation_prior_)
@@ -1351,6 +1359,7 @@ void FrameHandlerBase::getMotionPrior(const bool /*use_velocity_in_frame*/)
 }
 
 //------------------------------------------------------------------------------
+// 将重投影器的占用单元格设置到特征检测器的占用单元格中
 void FrameHandlerBase::setDetectorOccupiedCells(
     const size_t reprojector_grid_idx, const DetectorPtr& feature_detector)
 {
@@ -1369,6 +1378,8 @@ void FrameHandlerBase::setDetectorOccupiedCells(
   }
 }
 
+
+  // 设置初始帧，并将这些帧添加为关键帧
 void FrameHandlerBase::setFirstFrames(const std::vector<FramePtr>& first_frames)
 {
   resetAll();
@@ -1381,12 +1392,16 @@ void FrameHandlerBase::setFirstFrames(const std::vector<FramePtr>& first_frames)
   stage_ = Stage::kTracking;
 }
 
+
+  // 设置捆绑调整器，并记录捆绑调整器的类型
 void FrameHandlerBase::setBundleAdjuster(const AbstractBundleAdjustmentPtr& ba)
 {
   bundle_adjustment_ = ba;
   bundle_adjustment_type_ = bundle_adjustment_->getType();
 }
 
+
+  // 设置 IMU 处理器，并初始化 IMU 模型的噪声参数
 void FrameHandlerBase::setImuHandler(const ImuHandlerPtr& imu_handler) {
     imu_handler_ = imu_handler;
     if (schur_vins_ && imu_handler)
@@ -1396,6 +1411,7 @@ void FrameHandlerBase::setImuHandler(const ImuHandlerPtr& imu_handler) {
                                   imu_handler_->imu_calib_.gyro_bias_random_walk_sigma);  // init imu instriscs
 }
 
+  // 获取当前帧的重叠关键帧，并返回这些关键帧的列表
 std::vector<FramePtr> FrameHandlerBase::closeKeyframes() const
 {
   std::vector<FramePtr> close_kfs;
@@ -1406,6 +1422,7 @@ std::vector<FramePtr> FrameHandlerBase::closeKeyframes() const
   return close_kfs;
 }
 
+  // 设置补偿选项
 void FrameHandlerBase::setCompensation(const bool do_compensation)
 {
   sparse_img_align_->setCompensation(do_compensation);
