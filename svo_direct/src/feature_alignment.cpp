@@ -41,6 +41,7 @@ bool align1D(
 {
   CHECK_NOTNULL(cur_px_estimate);
 
+  // 特征块的大小和区域，是否收敛被设为False
   constexpr int kHalfPatchSize = 4;
   constexpr int kPatchSize = 2 * kHalfPatchSize;
   constexpr int kPatchArea = kPatchSize * kPatchSize;
@@ -48,10 +49,12 @@ bool align1D(
 
   // We optimize feature position and two affine parameters.
   // Compute derivative of template and prepare inverse compositional.
+  // 定义一个数组 ref_patch_dv 用于存储参考特征块的导数，并初始化 Hessian 矩阵 H 为零矩阵。
   float __attribute__((__aligned__(16))) ref_patch_dv[kPatchArea];
   Eigen::Matrix3f H = Eigen::Matrix3f::Zero(3, 3);
 
   // Compute gradient and hessian.
+  // 计算参考特征块的梯度和 Hessian 矩阵 H。根据是否使用仿射补偿，设置雅可比矩阵 J 的相关元素。
   constexpr int ref_step = kPatchSize + 2;
   float* it_dv = ref_patch_dv;
   for(int y=0; y<kPatchSize; ++y)
@@ -85,17 +88,18 @@ bool align1D(
     H(2, 2) = 1.0;
   }
 
+  // 初始化逆 Hessian 矩阵和其他变量
   if(h_inv)
     *h_inv = 1.0/H(0,0)*kPatchSize*kPatchSize;
   Eigen::Matrix3f Hinv = H.inverse();
   float mean_diff = 0;
   float alpha = 1.0;
 
-  // Compute pixel location in new image:
+  // Compute pixel location in new image:  初始化当前像素位置估计
   float u = cur_px_estimate->x();
   float v = cur_px_estimate->y();
 
-  // termination condition
+  // termination condition  初始化迭代优化过程，计算插值权重
   const float min_update_squared = 0.03*0.03;
   const int cur_step = cur_img.step.p[0];
   #if SVO_DISPLAY_ALIGN_1D
@@ -124,6 +128,8 @@ bool align1D(
     float wBR = subpix_x * subpix_y;
 
     // loop through search_patch, interpolate
+    // 遍历搜索特征块并进行插值，计算残差并更新雅可比和 Hessian 矩阵
+      // 梯度下降法和逆组成 Lucas-Kanade 算法
     uint8_t* it_ref = ref_patch;
     float* it_ref_dv = ref_patch_dv;
     float new_chi2 = 0.0;
@@ -166,6 +172,7 @@ bool align1D(
       Jres[2] = 0.0;
     }
 
+    // 计算更新量并更新像素位置。如果更新量小于最小更新值，则认为收敛并退出迭代
     Eigen::Vector3f update = Hinv * Jres;
     u += update[0]*dir[0];
     v += update[0]*dir[1];
@@ -178,7 +185,7 @@ bool align1D(
               << update[0] << ", " << update[1] << ", " << update[2]
               << "\t new chi2 = " << new_chi2;
 
-    #if SVO_DISPLAY_ALIGN_1D
+    #if SVO_DISPLAY_ALIGN_1D   // 可选的显示对齐过程
     cv::Mat res_patch_normalized, cur_patch_normalized, ref_patch_img, ref_patch_normalized;
     patch_utils::normalizeAndUpsamplePatch(res_patch, 8, &res_patch_normalized);
     patch_utils::normalizeAndUpsamplePatch(cur_patch, 8, &cur_patch_normalized);
@@ -220,12 +227,13 @@ bool align2D(
     bool no_simd,
     std::vector<Eigen::Vector2f> *each_step)
 {
-#ifdef __ARM_NEON__
+#ifdef __ARM_NEON__         // 如果启用了ARM NEON优化且未禁用SIMD优化，调用 align2D_NEON 函数进行对齐。
   if(!no_simd)
     return align2D_NEON(cur_img, ref_patch_with_border,
                         ref_patch, n_iter, cur_px_estimate);
 #endif
 
+  // 清空 each_step 向量（如果存在），定义特征块的大小和特征块区域，初始化是否收敛的标志为 false
   if(each_step) each_step->clear();
 
   const int halfpatch_size_ = 4;
@@ -235,11 +243,12 @@ bool align2D(
 
   // We optimize feature position and two affine parameters.
   // compute derivative of template and prepare inverse compositional
+  // 定义两个数组 ref_patch_dx 和 ref_patch_dy 用于存储参考特征块的导数，并初始化 Hessian 矩阵 H 为零矩阵。
   float __attribute__((__aligned__(16))) ref_patch_dx[patch_area_];
   float __attribute__((__aligned__(16))) ref_patch_dy[patch_area_];
   Eigen::Matrix4f H; H.setZero();
 
-  // compute gradient and hessian
+  // compute gradient and hessian 计算参考特征块的梯度和 Hessian 矩阵 H。根据是否使用仿射补偿，设置雅可比矩阵 J 的相关元素。
   const int ref_step = patch_size_+2;
   float* it_dx = ref_patch_dx;
   float* it_dy = ref_patch_dy;
@@ -282,7 +291,7 @@ bool align2D(
 
   if(each_step) each_step->push_back(Eigen::Vector2f(u, v));
 
-  // termination condition
+  // termination condition 初始化迭代优化过程，计算插值权重
   const float min_update_squared = 0.03*0.03; // TODO I suppose this depends on the size of the image (ate)
   const int cur_step = cur_img.step.p[0];
   //float chi2 = 0;
@@ -359,6 +368,7 @@ bool align2D(
     }
     chi2 = new_chi2;
 */
+    // 计算更新量 update 并根据更新量调整像素位置 u 和 v 以及仿射参数 mean_diff 和 alpha。如果更新量的平方和小于预设的最小更新值平方，则认为对齐过程收敛，退出迭代。
     update = Hinv * Jres;
     u += update[0];
     v += update[1];
@@ -405,13 +415,13 @@ bool align2D_SSE2(
   const int patch_size = 8;
   const int patch_area = 64;
   bool converged=false;
-  const int W_BITS = 14;
+  const int W_BITS = 14;  // 位宽
 
   // compute derivative of template and prepare inverse compositional
   int16_t __attribute__((__aligned__(16))) ref_patch_dx[patch_area];
   int16_t __attribute__((__aligned__(16))) ref_patch_dy[patch_area];
 
-  // compute gradient and hessian
+  // compute gradient and hessian 计算参考特征块的梯度和 Hessian 矩阵元素 A11、A12 和 A22
   const int ref_step = patch_size+2;
   int16_t* it_dx = ref_patch_dx;
   int16_t* it_dy = ref_patch_dy;
@@ -431,6 +441,7 @@ bool align2D_SSE2(
     }
   }
 
+  // 初始化当前像素位置估计 u 和 v，定义终止条件 min_update_squared 和 Hessian 矩阵的逆 Dinv。
   // Compute pixel location in new image:
   float u = cur_px_estimate.x();
   float v = cur_px_estimate.y();
@@ -729,6 +740,7 @@ bool align2D_NEON (const cv::Mat& cur_img,
 }
 
 //------------------------------------------------------------------------------
+// alignPyr2DVec 函数用于在金字塔图像中对多个特征点进行2D对齐。针对每个参考特征点 px_ref，调用 alignPyr2D 函数进行对齐，并更新当前特征点 px_cur 的位置和对齐状态 status。
 void alignPyr2DVec(
     const std::vector<cv::Mat>& img_pyr_ref,
     const std::vector<cv::Mat>& img_pyr_cur,
@@ -758,6 +770,7 @@ void alignPyr2DVec(
 }
 
 //------------------------------------------------------------------------------
+// 用于在金字塔图像中进行2D对齐。它从最高层开始逐层对齐，并在每一层上进行迭代优化，计算特征块在当前图像中的移动量。最终返回特征块的更新位置和是否收敛的标志。
 bool alignPyr2D(
     const std::vector<cv::Mat>& img_pyr_ref,
     const std::vector<cv::Mat>& img_pyr_cur,
